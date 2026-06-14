@@ -7,6 +7,7 @@ function pf_admin_menu() {
     add_submenu_page( 'fichaje', __( 'Registros', 'plugin-fichaje' ), __( 'Registros', 'plugin-fichaje' ), 'manage_options', 'fichaje', 'pf_admin_page_render' );
     add_submenu_page( 'fichaje', __( 'Empleados', 'plugin-fichaje' ), __( 'Empleados', 'plugin-fichaje' ), 'manage_options', 'fichaje-empleados', 'pf_admin_employees_render' );
     add_submenu_page( 'fichaje', __( 'Auditoría', 'plugin-fichaje' ), __( 'Auditoría', 'plugin-fichaje' ), 'manage_options', 'fichaje-auditoria', 'pf_admin_audit_render' );
+    add_submenu_page( 'fichaje', __( 'Control', 'plugin-fichaje' ), __( 'Control', 'plugin-fichaje' ), 'manage_options', 'fichaje-control', 'pf_admin_control_render' );
 }
 
 function pf_tipo_label( $tipo ) {
@@ -322,5 +323,128 @@ function pf_admin_audit_render() {
         </table>
         <?php endif; ?>
     </div>
+    <?php
+}
+
+function pf_admin_control_render() {
+    if ( ! current_user_can( 'manage_options' ) ) wp_die( __( 'No tienes permisos.', 'plugin-fichaje' ) );
+
+    if ( isset( $_POST['pf_save_control'] ) && check_admin_referer( 'pf_control_nonce' ) ) {
+        $hora = sanitize_text_field( $_POST['pf_hora_inicio_turno'] ?? '' );
+        if ( $hora === '' || preg_match( '/^\d{2}:\d{2}$/', $hora ) ) {
+            update_option( 'pf_hora_inicio_turno', $hora );
+        }
+        $all_ids  = get_users( [ 'fields' => 'ID' ] );
+        $selected = array_map( 'intval', (array) ( $_POST['pf_control_users'] ?? [] ) );
+        foreach ( $all_ids as $uid ) {
+            if ( in_array( (int) $uid, $selected, true ) ) update_user_meta( $uid, 'pf_control', '1' );
+            else delete_user_meta( $uid, 'pf_control' );
+        }
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Configuración de control guardada.', 'plugin-fichaje' ) . '</p></div>';
+    }
+
+    global $wp_roles;
+    $hora_turno = get_option( 'pf_hora_inicio_turno', '' );
+    $all_users  = get_users( [ 'orderby' => 'display_name', 'order' => 'ASC' ] );
+    $base_url   = rest_url( 'fichaje/v1' );
+    ?>
+    <div class="wrap pf-admin-wrap">
+        <h1><span class="dashicons dashicons-visibility"></span> <?php esc_html_e( 'Control y monitorización', 'plugin-fichaje' ); ?></h1>
+        <p><?php esc_html_e( 'Configura quién puede consumir la API de monitorización y define la hora de turno para detectar llegadas tarde.', 'plugin-fichaje' ); ?></p>
+
+        <form method="post">
+            <?php wp_nonce_field( 'pf_control_nonce' ); ?>
+
+            <div class="pf-card">
+                <h2><?php esc_html_e( 'Hora de inicio de turno', 'plugin-fichaje' ); ?></h2>
+                <p><?php esc_html_e( 'Si un trabajador ficha entrada después de esta hora se marca como llegada tarde. Deja vacío para no controlar.', 'plugin-fichaje' ); ?></p>
+                <label>
+                    <?php esc_html_e( 'Hora de turno:', 'plugin-fichaje' ); ?>
+                    <input type="time" name="pf_hora_inicio_turno" value="<?php echo esc_attr( $hora_turno ); ?>">
+                </label>
+            </div>
+
+            <div class="pf-card">
+                <h2><?php esc_html_e( 'Usuarios con acceso a la API de control', 'plugin-fichaje' ); ?></h2>
+                <p><?php esc_html_e( 'Estos usuarios podrán consultar y editar registros a través de los endpoints REST. Los administradores siempre tienen acceso.', 'plugin-fichaje' ); ?></p>
+                <table class="widefat striped pf-table">
+                    <thead>
+                        <tr>
+                            <th style="width:40px"><input type="checkbox" id="pf-control-check-all" title="<?php esc_attr_e( 'Seleccionar todos', 'plugin-fichaje' ); ?>"></th>
+                            <th><?php esc_html_e( 'Nombre', 'plugin-fichaje' ); ?></th>
+                            <th><?php esc_html_e( 'Email', 'plugin-fichaje' ); ?></th>
+                            <th><?php esc_html_e( 'Rol', 'plugin-fichaje' ); ?></th>
+                            <th><?php esc_html_e( 'Estado', 'plugin-fichaje' ); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ( $all_users as $u ) :
+                        $is_control = get_user_meta( $u->ID, 'pf_control', true ) === '1';
+                        $roles      = array_map( fn( $r ) => $wp_roles->roles[ $r ]['name'] ?? $r, $u->roles );
+                    ?>
+                    <tr>
+                        <td><input type="checkbox" name="pf_control_users[]" value="<?php echo esc_attr( $u->ID ); ?>" <?php checked( $is_control ); ?>></td>
+                        <td><strong><?php echo esc_html( $u->display_name ); ?></strong></td>
+                        <td><?php echo esc_html( $u->user_email ); ?></td>
+                        <td><?php echo esc_html( implode( ', ', $roles ) ); ?></td>
+                        <td><?php echo $is_control ? '<span class="pf-badge pf-badge-active">✅ Control</span>' : '<span class="pf-badge">—</span>'; ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>
+                <button type="submit" name="pf_save_control" value="1" class="button button-primary">
+                    <?php esc_html_e( 'Guardar configuración', 'plugin-fichaje' ); ?>
+                </button>
+            </p>
+        </form>
+
+        <div class="pf-card">
+            <h2><?php esc_html_e( 'Endpoints REST disponibles', 'plugin-fichaje' ); ?></h2>
+            <p>
+                <?php esc_html_e( 'Autenticación: usuario logueado con pf_control = 1 o administrador.', 'plugin-fichaje' ); ?>
+                <?php esc_html_e( 'Enviar cabecera ', 'plugin-fichaje' ); ?><code>X-WP-Nonce: wp_create_nonce("wp_rest")</code>
+            </p>
+            <table class="widefat striped pf-table">
+                <thead><tr><th><?php esc_html_e( 'Método', 'plugin-fichaje' ); ?></th><th>Endpoint</th><th><?php esc_html_e( 'Descripción', 'plugin-fichaje' ); ?></th><th><?php esc_html_e( 'Parámetros', 'plugin-fichaje' ); ?></th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><code>GET</code></td>
+                        <td><code><?php echo esc_html( $base_url . '/resumen-semanal' ); ?></code></td>
+                        <td><?php esc_html_e( 'Resumen semanal: horas por día y trabajador, totales e incidencias', 'plugin-fichaje' ); ?></td>
+                        <td><code>week=2025-W24</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>GET</code></td>
+                        <td><code><?php echo esc_html( $base_url . '/empleados' ); ?></code></td>
+                        <td><?php esc_html_e( 'Lista de empleados activos', 'plugin-fichaje' ); ?></td>
+                        <td>—</td>
+                    </tr>
+                    <tr>
+                        <td><code>GET</code></td>
+                        <td><code><?php echo esc_html( $base_url . '/incidencias' ); ?></code></td>
+                        <td><?php esc_html_e( 'Alertas activas: olvidados fichar, jornadas abiertas, llegadas tarde', 'plugin-fichaje' ); ?></td>
+                        <td>—</td>
+                    </tr>
+                    <tr>
+                        <td><code>PATCH</code></td>
+                        <td><code><?php echo esc_html( $base_url . '/registros/{id}' ); ?></code></td>
+                        <td><?php esc_html_e( 'Editar un registro (hora_entrada, hora_salida, notas). Queda auditado.', 'plugin-fichaje' ); ?></td>
+                        <td><code>motivo*</code> · <code>hora_entrada</code> · <code>hora_salida</code> · <code>notas</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+    (function(){
+        var ca = document.getElementById('pf-control-check-all');
+        if ( ca ) ca.addEventListener('change', function() {
+            document.querySelectorAll('input[name="pf_control_users[]"]').forEach(function(cb){ cb.checked = ca.checked; });
+        });
+    })();
+    </script>
     <?php
 }

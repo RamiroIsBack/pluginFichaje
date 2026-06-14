@@ -24,6 +24,7 @@ require_once PF_PLUGIN_DIR . 'includes/ajax.php';
 require_once PF_PLUGIN_DIR . 'includes/admin-page.php';
 require_once PF_PLUGIN_DIR . 'includes/shortcode.php';
 require_once PF_PLUGIN_DIR . 'includes/export.php';
+require_once PF_PLUGIN_DIR . 'includes/rest-api.php';
 
 register_activation_hook( __FILE__, 'pf_activate' );
 function pf_activate() {
