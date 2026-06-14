@@ -1,0 +1,14 @@
+# Zips de distribución
+*.zip
+
+# Ficheros temporales / basura de uploads fallidos
+ziHfhVLq
+zizwh3FG
+
+# Versiones antiguas sueltas en la raíz (el plugin real está en plugin-fichaje/plugin-fichaje/)
+/assets/
+/docs/
+/includes/
+/languages/
+/plugin-fichaje.php
+/readme.txt
